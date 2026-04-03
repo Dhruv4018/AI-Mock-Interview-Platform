@@ -25,6 +25,8 @@ const Step2Interview = ({ interviewData, onFinish }) => {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [voiceGender, setVoiceGender] = useState("female");
   const [subtitle, setSubtitle] = useState("")
+  const isListeningRef = useRef(false)   // 🔥 NEW
+const isMicOnRef = useRef(true)    
 
   const recognitionRef = useRef(null)
   const videoRef = useRef(null);
@@ -102,22 +104,35 @@ const Step2Interview = ({ interviewData, onFinish }) => {
         videoRef.current?.play();
       };
 
+      // utterance.onend = () => {
+      //   videoRef.current?.pause();
+      //   videoRef.current.currentTime = 0;
+      //   setIsAIPlaying(false);
+
+      //   if (isMicOn) {
+      //     startMic();
+      //   }
+
+
+      //   setTimeout(() => {
+      //     setSubtitle("");
+      //     resolve();
+      //   }, 300)
+      // };
       utterance.onend = () => {
-        videoRef.current?.pause();
-        videoRef.current.currentTime = 0;
-        setIsAIPlaying(false);
+  videoRef.current?.pause();
+  videoRef.current.currentTime = 0;
+  setIsAIPlaying(false);
 
-        if (isMicOn) {
-          startMic();
-        }
+  if (isMicOnRef.current) {  // 🔥 FIX
+    startMic();
+  }
 
-
-        setTimeout(() => {
-          setSubtitle("");
-          resolve();
-        }, 300)
-      };
-
+  setTimeout(() => {
+    setSubtitle("");
+    resolve();
+  }, 300);
+};
       setSubtitle(text);
 
       window.speechSynthesis.speak(utterance)
@@ -213,61 +228,76 @@ const Step2Interview = ({ interviewData, onFinish }) => {
   //   recognitionRef.current = recognition;
   // }, []);
 
-  useEffect(() => {
-    if (!("webkitSpeechRecognition" in window)) return;
+ useEffect(() => {
+  if (!("webkitSpeechRecognition" in window)) return;
 
-    const recognition = new window.webkitSpeechRecognition();
+  const recognition = new window.webkitSpeechRecognition();
 
-    recognition.lang = "en-US";
-    recognition.continuous = true;
-    recognition.interimResults = true; // 🔥 live typing
+  recognition.lang = "en-US";
+  recognition.continuous = false; // 🔥 IMPORTANT FIX
+  recognition.interimResults = false;
 
-    recognition.onresult = (event) => {
-      let transcript = "";
+  recognition.onresult = (event) => {
+    const transcript =
+      event.results[event.results.length - 1][0].transcript;
 
-      for (let i = 0; i < event.results.length; i++) {
-        transcript += event.results[i][0].transcript + " ";
-      }
+    setAnswer((prev) => prev + " " + transcript);
+  };
 
-      setAnswer(transcript.trim()); // 🔥 replace, not append
-    };
+  recognition.onend = () => {
+    isListeningRef.current = false;
 
-    recognition.onend = () => {
-      if (isMicOn && !isAIPlaying) {
-        recognition.start();
-      }
-    };
-
-    recognitionRef.current = recognition;
-  }, []);
-  const startMic = () => {
-    if (recognitionRef.current && !isAIPlaying) {
-      try {
-        recognitionRef.current.start();
-      } catch (error) {
-        console.log(error)
-
-
-      }
+    // 🔥 FIX: state ki jagah ref use karo
+    if (isMicOnRef.current && !isAIPlaying) {
+      setTimeout(() => {
+        startMic();
+      }, 200);
     }
+  };
+
+  recognition.onerror = (e) => {
+    console.log("Speech error:", e);
+    isListeningRef.current = false;
+  };
+
+  recognitionRef.current = recognition;
+
+}, []);
+  const startMic = () => {
+  if (!recognitionRef.current || isAIPlaying) return;
+
+  if (isListeningRef.current) return; // 🔥 prevent duplicate
+
+  try {
+    recognitionRef.current.start();
+    isListeningRef.current = true;
+  } catch (error) {
+    console.log(error);
   }
+};
 
   const stopMic = () => {
-    if (recognitionRef.current) {
+  if (recognitionRef.current) {
+    try {
       recognitionRef.current.stop();
-    }
+      recognitionRef.current.abort(); // 🔥 force stop
+    } catch (e) {}
+
+    isListeningRef.current = false;
   }
+};
 
   const toggleMic = () => {
-    if (isMicOn) {
-      stopMic();
-    } else {
-      startMic();
-    }
-
-    setIMicOn(!isMicOn);
+  if (isMicOnRef.current) {
+    stopMic();
+    isMicOnRef.current = false;
+    setIMicOn(false);
+  } else {
+    isMicOnRef.current = true;
+    setIMicOn(true);
+    startMic();
   }
-
+};
   const submitAnswer = async () => {
     if (isSubmitting) return;
     stopMic();
